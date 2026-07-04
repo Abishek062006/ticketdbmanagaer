@@ -2,11 +2,15 @@ import { resolveIntentContext } from "./intentContextResolver.js";
 import { resolveTable } from "./entityResolver.js";
 import { resolveColumns } from "./columnResolver.js";
 import { resolveRecord } from "./recordResolver.js";
+import { resolveTicketAssignee } from "./ticketAssigneeResolver.js";
+import { filterTicketFieldsToMentioned } from "./ticketFieldsResolver.js";
+import { repairUpdateShape } from "./updateShapeRepair.js";
 
 export const enrichIntent = async (
   sessionId,
   parsedIntent,
-  user
+  user,
+  rawMessage = ""
 ) => {
   let enriched =
     resolveIntentContext(
@@ -20,8 +24,21 @@ export const enrichIntent = async (
   enriched =
     await resolveColumns(enriched);
 
+  // Must run before resolveRecord: it needs correct filters to
+  // compute the match count from.
+  enriched =
+    await repairUpdateShape(enriched);
+
   enriched =
     await resolveRecord(enriched);
+
+  enriched =
+    await resolveTicketAssignee(enriched, rawMessage);
+
+  enriched = filterTicketFieldsToMentioned(
+    enriched,
+    rawMessage
+  );
 
   return enriched;
 };

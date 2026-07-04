@@ -55,6 +55,10 @@ export function SessionProvider({ children }) {
   const [activeTable, setActiveTable] = useState(null);
   const [refreshVersion, setRefreshVersion] = useState(0);
 
+  // A ticket awaiting Send/Cancel, mirrored in the right panel in
+  // place of the table view until it's resolved.
+  const [ticketPreview, setTicketPreview] = useState(null);
+
   const [token, setToken] = useState(() =>
     localStorage.getItem(TOKEN_STORAGE_KEY)
   );
@@ -103,11 +107,13 @@ export function SessionProvider({ children }) {
       setActiveTable,
       refreshVersion,
       notifyTableChanged,
+      ticketPreview,
+      setTicketPreview,
       user,
       login,
       logout,
     }),
-    [sessionId, activeTable, refreshVersion, user]
+    [sessionId, activeTable, refreshVersion, ticketPreview, user]
   );
 
   return (

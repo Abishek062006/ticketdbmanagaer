@@ -26,8 +26,12 @@ import {
 } from "../utils/recordFormHelper.js";
 import { WRITE_INTENTS, INTENTS } from "../utils/intentTypes.js";
 import TableMetadata from "../models/TableMetadata.js";
-import { findMatchingRecords } from "../utils/recordMatcher.js";
+import {
+  findMatchingRecords,
+  resolveRowByFreeText,
+} from "../utils/recordMatcher.js";
 import { resolveJoinColumns } from "../services/joinResolver.js";
+import { resolveTicketAssignee } from "../services/ticketAssigneeResolver.js";
 import { checkIntentAuthorization } from "../services/authorizationService.js";
 import { resolveTicketForUser } from "../services/ticketService.js";
 
@@ -44,6 +48,16 @@ const BULK_INTENT_FOR = {
 
 const ALL_OF_THEM_PATTERN =
   /^(all( of them)?|every one|apply to all|yes,?\s*all)\b/i;
+
+// A pending clarification's answer is normally merged back into the
+// original intent - but a message that reads like a brand-new command
+// ("add ...", "create a ticket for ...") is a new request, not an
+// answer. Without this escape, the old pending intent hijacks the new
+// message: its stale parameters (e.g. a failed ticket's mentions) leak
+// into the new action, and genuinely different requests ("add a email
+// for ravi") get force-fitted into the old intent and lost.
+const NEW_COMMAND_PATTERN =
+  /^(add|create|insert|make|update|change|set|delete|remove|drop|rename|show|list|display|give|grant|revoke|upload|send|mark)\s+\S+/i;
 
 const CLARIFICATION_ATTEMPT_LIMIT = 3;
 
@@ -252,6 +266,48 @@ const routeResolvedIntent = async (
     });
   }
 
+  // CREATE_TICKET's assignee is resolved against the real employees
+  // table by resolveTicketAssignee() (in enrichIntent) BEFORE this
+  // point - never let a guessed/invented email reach the permission
+  // check below, since that check only means anything against a real
+  // employee's real address.
+  if (intent === INTENTS.CREATE_TICKET) {
+    if (parameters.assigneeNotFound) {
+      const { assigneeNotFound, ...cleanParameters } = parameters;
+
+      return askClarification(res, sessionId, {
+        subtype: "TICKET_ASSIGNEE",
+        intent,
+        parameters: cleanParameters,
+        question: `I couldn't find an employee matching \`${assigneeNotFound}\`. Who should this ticket go to? (name or email)`,
+      });
+    }
+
+    if (parameters.assigneeAmbiguous) {
+      const { assigneeAmbiguous, ...cleanParameters } = parameters;
+
+      return askClarification(res, sessionId, {
+        subtype: "TICKET_ASSIGNEE",
+        intent,
+        parameters: cleanParameters,
+        question: `\`${parameters.assignedTo}\` matches more than one employee (${assigneeAmbiguous.join(
+          ", "
+        )}). Which email did you mean?`,
+      });
+    }
+
+    if (parameters.assigneeNoEmail) {
+      const { assigneeNoEmail, ...cleanParameters } = parameters;
+
+      return askClarification(res, sessionId, {
+        subtype: "TICKET_ASSIGNEE",
+        intent,
+        parameters: cleanParameters,
+        question: `\`${assigneeNoEmail}\` doesn't have an email on file, so I can't send them a ticket. Who should this go to instead?`,
+      });
+    }
+  }
+
   // Authorization happens BEFORE any confirmation/clarification is ever
   // shown - a user should never be offered a "confirm?" prompt for
   // something they aren't allowed to do in the first place.
@@ -340,6 +396,26 @@ const routeResolvedIntent = async (
         );
       }
     }
+  }
+
+  // GET/UPDATE/DELETE_RECORD whose filters resolved to NOTHING match
+  // every row in the table. That's never what a single-row request
+  // meant (it usually means the model dropped or mangled the "which
+  // row" part) - ask for the row instead of offering a table-wide
+  // "apply to all", which here would be a disaster (e.g. setting
+  // every employee's email to the same address).
+  if (
+    SINGULAR_RECORD_INTENTS.includes(intent) &&
+    !parameters.recordId &&
+    parameters.filters &&
+    Object.keys(parameters.filters).length === 0
+  ) {
+    return askClarification(res, sessionId, {
+      subtype: "NO_FILTER",
+      intent,
+      parameters,
+      question: `Which row in \`${parameters.tableName}\` should this apply to? Give a name or another identifying detail.`,
+    });
   }
 
   // GET/UPDATE/DELETE_RECORD that didn't resolve to exactly
@@ -591,7 +667,8 @@ export const chatController = async (
     if (
       pendingAction?.type === "CLARIFICATION" &&
       type === "message" &&
-      message
+      message &&
+      !NEW_COMMAND_PATTERN.test(message.trim())
     ) {
       addMessage(sessionId, "user", message);
 
@@ -623,6 +700,92 @@ export const chatController = async (
           0,
           user
         );
+      }
+
+      // "Who should this ticket go to?" answers are re-resolved
+      // directly against the employees table - routing them through
+      // the LLM merge both risks another invented email and (worse)
+      // was dropping the ticket's already-collected fields, because
+      // the fields-must-appear-in-message filter ran against the
+      // one-word answer instead of the original request.
+      if (pendingAction.subtype === "TICKET_ASSIGNEE") {
+        const retried = await resolveTicketAssignee(
+          {
+            intent: pendingAction.intent,
+            confidence: 1,
+            parameters: {
+              ...pendingAction.parameters,
+              assignedTo: message.trim(),
+            },
+          },
+          message
+        );
+
+        clearPendingAction(sessionId);
+
+        return routeResolvedIntent(
+          res,
+          sessionId,
+          retried,
+          nextAttempts,
+          user
+        );
+      }
+
+      // "Which row?" answers are matched directly against the table's
+      // own rows in code - the LLM repeatedly fails to merge a bare
+      // name like "to ravi" back into the intent, and a row lookup
+      // needs zero language understanding anyway.
+      if (pendingAction.subtype === "NO_FILTER") {
+        const { filters, matches } =
+          await resolveRowByFreeText(
+            pendingAction.parameters.tableName,
+            message
+          );
+
+        if (filters) {
+          clearPendingAction(sessionId);
+
+          return routeResolvedIntent(
+            res,
+            sessionId,
+            {
+              intent: pendingAction.intent,
+              confidence: 1,
+              parameters: {
+                ...pendingAction.parameters,
+                filters,
+                ...(matches.length === 1
+                  ? { recordId: matches[0]._id.toString() }
+                  : { matchCount: matches.length }),
+              },
+            },
+            nextAttempts,
+            user
+          );
+        }
+
+        if (nextAttempts >= CLARIFICATION_ATTEMPT_LIMIT) {
+          clearPendingAction(sessionId);
+
+          const failMessage =
+            "I still couldn't find that row. Let's start over with a fresh request.";
+
+          addMessage(sessionId, "assistant", failMessage);
+
+          return respond(res, sessionId, {
+            type: "error",
+            message: failMessage,
+          });
+        }
+
+        return askClarification(res, sessionId, {
+          subtype: "NO_FILTER",
+          intent: pendingAction.intent,
+          parameters: pendingAction.parameters,
+          question: `I couldn't find a matching row in \`${pendingAction.parameters.tableName}\`. Give a value from the table, like a name or id.`,
+          attempts: nextAttempts,
+        });
       }
 
       const contextualMessage =
@@ -669,7 +832,8 @@ export const chatController = async (
       const enriched = await enrichIntent(
         sessionId,
         parsedIntent,
-        user
+        user,
+        message
       );
 
       return routeResolvedIntent(
@@ -698,7 +862,13 @@ export const chatController = async (
     const parsedIntent = await enrichIntent(
       sessionId,
       await parseIntent(sessionId, message, user),
-      user
+      user,
+      message
+    );
+
+    console.log(
+      "[intent-enriched]",
+      JSON.stringify(parsedIntent)
     );
 
     return routeResolvedIntent(

@@ -200,7 +200,17 @@ export async function parseIntentFromContext(
 
     const parsed = JSON.parse(json);
 
-    return sanitizeParsedIntent(parsed);
+    const sanitized = sanitizeParsedIntent(parsed);
+
+    // Always visible in the server terminal - the model's output
+    // shape varies run to run, and diagnosing a bad parse without
+    // this means guessing.
+    console.log(
+      "[intent-parse]",
+      JSON.stringify(sanitized)
+    );
+
+    return sanitized;
   } catch (error) {
     console.error(
       "Intent Parser Error:",

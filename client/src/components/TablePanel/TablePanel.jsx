@@ -4,9 +4,55 @@ import { listTables } from "../../api/client.js";
 import { useSession } from "../../context/SessionContext.jsx";
 import TableView from "./TableView.jsx";
 
+// Fullscreen stand-in for the table while a ticket is awaiting
+// Send/Cancel in the chat - the table view comes back the moment the
+// ticket is sent or cancelled.
+function TicketPreviewPane({ ticket }) {
+  const fieldEntries = Object.entries(ticket.fields || {});
+
+  return (
+    <div className="ticket-preview-pane">
+      <h2>Ticket preview</h2>
+
+      <p>
+        To: <code>{ticket.assignedTo}</code>
+      </p>
+
+      {ticket.mentions?.length > 0 && (
+        <p>
+          cc:{" "}
+          {ticket.mentions
+            .map((name) => `@${name}`)
+            .join(", ")}
+        </p>
+      )}
+
+      {fieldEntries.length > 0 ? (
+        <ul className="known-fields">
+          {fieldEntries.map(([name, value]) => (
+            <li key={name}>
+              <strong>{name}:</strong> {String(value)}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p>(no additional fields)</p>
+      )}
+
+      <p className="ticket-preview-hint">
+        Use Send / Cancel in the chat to finish.
+      </p>
+    </div>
+  );
+}
+
 export default function TablePanel() {
-  const { activeTable, setActiveTable, refreshVersion } =
-    useSession();
+  const {
+    activeTable,
+    setActiveTable,
+    refreshVersion,
+    ticketPreview,
+  } = useSession();
 
   const [tables, setTables] = useState([]);
 
@@ -55,7 +101,9 @@ export default function TablePanel() {
         </select>
       </div>
 
-      {activeTable ? (
+      {ticketPreview ? (
+        <TicketPreviewPane ticket={ticketPreview} />
+      ) : activeTable ? (
         <TableView tableName={activeTable} />
       ) : (
         <div className="table-empty">

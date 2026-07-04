@@ -278,6 +278,27 @@
   text-align: center;
 }
 
+.ticket-preview-pane {
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.ticket-preview-pane h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.ticket-preview-pane .known-fields {
+  max-width: 480px;
+}
+
+.ticket-preview-hint {
+  opacity: 0.6;
+  font-size: 0.85rem;
+}
+
 .table-footer {
   padding: 0.5rem 0.75rem;
   border-top: 1px solid var(--border-color);

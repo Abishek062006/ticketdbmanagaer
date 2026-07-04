@@ -8,7 +8,8 @@ import ChatInput from "./ChatInput.jsx";
 let nextId = 1;
 
 export default function ChatPanel() {
-  const { sessionId, notifyTableChanged } = useSession();
+  const { sessionId, notifyTableChanged, setTicketPreview } =
+    useSession();
 
   const [messages, setMessages] = useState([
     {
@@ -77,6 +78,14 @@ export default function ChatPanel() {
           fields: data.fields,
           resolved: false,
         });
+
+        // Mirror the pending ticket in the right panel (in place of
+        // the table) until it's sent or cancelled.
+        setTicketPreview({
+          assignedTo: data.assignedTo,
+          mentions: data.mentions,
+          fields: data.fields,
+        });
         break;
 
       case "action_result":
@@ -84,6 +93,8 @@ export default function ChatPanel() {
           kind: "assistant-text",
           text: data.message,
         });
+
+        setTicketPreview(null);
 
         if (data.affectedTable) {
           notifyTableChanged(data.affectedTable);
@@ -95,6 +106,8 @@ export default function ChatPanel() {
           kind: "assistant-text",
           text: data.message,
         });
+
+        setTicketPreview(null);
         break;
 
       case "error":
@@ -102,6 +115,8 @@ export default function ChatPanel() {
           kind: "assistant-error",
           text: data.message,
         });
+
+        setTicketPreview(null);
         break;
 
       default:
@@ -126,6 +141,10 @@ export default function ChatPanel() {
   };
 
   const sendMessage = (text) => {
+    // A new request abandons any pending ticket preview server-side;
+    // drop the mirrored panel too so it can't linger stale.
+    setTicketPreview(null);
+
     pushMessage({ kind: "user", text });
     runRequest({ sessionId, type: "message", message: text });
   };
