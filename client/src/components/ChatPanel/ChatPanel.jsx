@@ -26,7 +26,7 @@ export default function ChatPanel() {
     scrollRef.current?.scrollTo({
       top: scrollRef.current.scrollHeight,
     });
-  }, [messages]);
+  }, [messages, busy]);
 
   const pushMessage = (msg) => {
     setMessages((prev) => [
@@ -210,6 +210,17 @@ export default function ChatPanel() {
             }
           />
         ))}
+
+        {busy && (
+          <div
+            className="bubble assistant typing"
+            aria-label="Assistant is working"
+          >
+            <span className="typing-dot" />
+            <span className="typing-dot" />
+            <span className="typing-dot" />
+          </div>
+        )}
       </div>
 
       <ChatInput

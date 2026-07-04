@@ -29,9 +29,20 @@ export default function ChatInput({
     }
   };
 
+  // Grow the box with its content, up to a cap (CSS max-height).
+  const autoResize = () => {
+    const el = inputRef.current;
+
+    if (!el) return;
+
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+  };
+
   const handleChange = async (event) => {
     const value = event.target.value;
     setText(value);
+    autoResize();
 
     const caret = event.target.selectionStart ?? value.length;
     const match = MENTION_PATTERN.exec(value.slice(0, caret));
@@ -73,6 +84,18 @@ export default function ChatInput({
     onSend(text.trim());
     setText("");
     setSuggestions([]);
+
+    if (inputRef.current) {
+      inputRef.current.style.height = "auto";
+    }
+  };
+
+  // Enter sends; Shift+Enter inserts a newline.
+  const handleKeyDown = (event) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      handleSubmit(event);
+    }
   };
 
   const handleFileChange = (event) => {
@@ -117,11 +140,12 @@ export default function ChatInput({
       )}
 
       <div className="chat-input">
-        <input
+        <textarea
           ref={inputRef}
-          type="text"
+          rows={1}
           value={text}
           onChange={handleChange}
+          onKeyDown={handleKeyDown}
           placeholder="Ask me anything about your data... (use @ to mention an employee)"
           disabled={disabled}
         />

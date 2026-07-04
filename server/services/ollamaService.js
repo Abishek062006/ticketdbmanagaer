@@ -4,8 +4,12 @@ const OLLAMA_URL =
 const OLLAMA_MODEL =
   process.env.OLLAMA_MODEL || "qwen2.5:7b";
 
+// Generous because the FIRST call after the model unloads or the
+// prompt changes re-evaluates the whole ~6k-token prompt (tens of
+// seconds); warm repeat calls reuse the cached prefix and take a
+// few seconds.
 const REQUEST_TIMEOUT = Number(
-  process.env.OLLAMA_TIMEOUT || 60000
+  process.env.OLLAMA_TIMEOUT || 180000
 );
 
 /**
@@ -38,6 +42,10 @@ export async function chatWithOllama({
 
         stream: false,
 
+        // Keep the model loaded in memory between requests - reloading
+        // it cold adds several seconds to the first call after idle.
+        keep_alive: "30m",
+
         // Force valid JSON output and a deterministic (greedy) decode -
         // this is a structured-intent-extraction task, not a creative
         // one, and the growing number of intents/few-shots makes a
@@ -47,6 +55,18 @@ export async function chatWithOllama({
         format: "json",
         options: {
           temperature: 0,
+
+          // Ollama's default context is 4096 tokens but the system
+          // prompt alone is ~6000, so with the default it was silently
+          // TRUNCATED - the model literally never saw a third of its
+          // instructions. 8192 fits prompt + per-request context +
+          // output with headroom, without the load-time/memory cost a
+          // 16k window showed on this machine.
+          num_ctx: 8192,
+
+          // The reply is one small JSON object - never let a runaway
+          // generation burn seconds producing garbage past it.
+          num_predict: 512,
         },
 
         messages: [

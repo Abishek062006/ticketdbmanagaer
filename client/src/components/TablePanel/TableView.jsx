@@ -57,7 +57,18 @@ export default function TableView({ tableName }) {
   }, [tableName, refreshVersion]);
 
   if (loading) {
-    return <div className="table-empty">Loading...</div>;
+    return (
+      <div className="table-skeleton" aria-label="Loading table">
+        <div className="skeleton-bar header" />
+        {[0, 1, 2, 3, 4, 5].map((index) => (
+          <div
+            key={index}
+            className="skeleton-bar"
+            style={{ "--row-index": index }}
+          />
+        ))}
+      </div>
+    );
   }
 
   if (error) {
@@ -77,8 +88,14 @@ export default function TableView({ tableName }) {
           </thead>
 
           <tbody>
-            {records.map((record) => (
-              <tr key={record._id}>
+            {records.map((record, index) => (
+              // Keying on refreshVersion remounts the rows whenever the
+              // data changes, replaying the staggered build-in animation.
+              <tr
+                key={`${refreshVersion}-${record._id}`}
+                className="row-animate"
+                style={{ "--row-index": index }}
+              >
                 {columns.map((column) => (
                   <td key={column.name}>
                     {formatValue(record[column.name])}
