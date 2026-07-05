@@ -6,40 +6,52 @@ export default function TicketPreviewBubble({
 
   return (
     <div className="bubble assistant confirmation ticket-preview">
-      <p>
-        Ticket for <code>{message.assignedTo}</code>
-        {message.mentions?.length > 0 && (
-          <>
-            {" "}
-            (cc:{" "}
-            {message.mentions.map((name) => `@${name}`).join(", ")})
-          </>
-        )}
-        :
-      </p>
+      <div className="ticket-form ticket-form-compact">
+        <div className="ticket-form-header">
+          <h2>New Ticket</h2>
+          <span className="ticket-form-badge">Preview</span>
+        </div>
 
-      {fieldEntries.length > 0 ? (
-        <ul className="known-fields">
+        <div className="ticket-form-body">
+          <div className="tf-row">
+            <span className="tf-label">Assigned to</span>
+            <div className="tf-value tf-mono">
+              {message.assignedTo}
+            </div>
+          </div>
+
+          {message.mentions?.length > 0 && (
+            <div className="tf-row">
+              <span className="tf-label">CC</span>
+              <div className="tf-value tf-mono">
+                {message.mentions.join(", ")}
+              </div>
+            </div>
+          )}
+
           {fieldEntries.map(([name, value]) => (
-            <li key={name}>
-              <strong>{name}:</strong> {String(value)}
-            </li>
+            <div className="tf-row" key={name}>
+              <span className="tf-label">{name}</span>
+              <div className="tf-value">{String(value)}</div>
+            </div>
           ))}
-        </ul>
-      ) : (
-        <p className="known-fields">(no additional fields)</p>
-      )}
 
-      {message.deadline && (
-        <p className="ticket-deadline">
-          Due{" "}
-          {new Date(message.deadline).toLocaleDateString(undefined, {
-            day: "numeric",
-            month: "short",
-            year: "numeric",
-          })}
-        </p>
-      )}
+          {message.deadline && (
+            <div className="tf-row">
+              <span className="tf-label">Due date</span>
+              <div className="tf-value tf-due">
+                {new Date(
+                  message.deadline
+                ).toLocaleDateString(undefined, {
+                  day: "numeric",
+                  month: "short",
+                  year: "numeric",
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
 
       {!message.resolved ? (
         <div className="confirmation-actions">

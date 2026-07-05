@@ -6,8 +6,9 @@ const escapeRegex = (value) =>
   value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 // An @ only counts as a mention when it starts a token - "@ABISHEK"
-// yes, the @ inside "abi@test.com" no.
-const RAW_MENTION_PATTERN = /(^|\s)@([\w.\-]+)/g;
+// yes, the @ inside "abi@test.com" no. Tolerates an accidental
+// space after the @ ("@ ABISHEK").
+const RAW_MENTION_PATTERN = /(^|\s)@ ?([\w.\-]+)/g;
 
 const extractRawMentions = (text = "") => [
   ...new Set(

@@ -40,6 +40,11 @@ export const INTENTS = {
   LIST_MY_MEETINGS: "LIST_MY_MEETINGS",
   MY_INFO: "MY_INFO",
 
+  // A batch of independent actions from one message ("delete tables
+  // a and b", "add rahul and update priya's salary"). Parameters:
+  // { actions: [{intent, parameters}, ...] }.
+  MULTI_ACTION: "MULTI_ACTION",
+
   UNKNOWN: "UNKNOWN",
 };
 

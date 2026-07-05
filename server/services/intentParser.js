@@ -129,6 +129,8 @@ function normalizeSortAliasParameters(parameters = {}) {
   return params;
 }
 
+const MAX_BATCH_ACTIONS = 10;
+
 // Sanitizes the raw LLM JSON output shape/confidence - distinct from
 // (and unrelated to) utils/intentValidator.js's exported validateIntent,
 // which checks required parameters before dispatch.
@@ -145,6 +147,49 @@ function sanitizeParsedIntent(result) {
   ) {
     intent = INTENTS.LIST_RECORDS;
     parameters = normalizeSortAliasParameters(parameters);
+  }
+
+  // A batch: sanitize each sub-action through this same function,
+  // drop the broken ones, cap the count, and unwrap a one-action
+  // batch back into a plain single intent.
+  if (intent === INTENTS.MULTI_ACTION) {
+    const rawActions = Array.isArray(parameters?.actions)
+      ? parameters.actions
+      : [];
+
+    const actions = rawActions
+      .slice(0, MAX_BATCH_ACTIONS)
+      .map((action) => sanitizeParsedIntent(action))
+      .filter(
+        (action) =>
+          action.intent !== INTENTS.UNKNOWN &&
+          action.intent !== INTENTS.MULTI_ACTION
+      )
+      .map(({ intent: subIntent, parameters: subParameters }) => ({
+        intent: subIntent,
+        parameters: subParameters,
+      }));
+
+    if (actions.length === 0) {
+      return createUnknownIntent();
+    }
+
+    if (actions.length === 1) {
+      return {
+        intent: actions[0].intent,
+        confidence: 1,
+        parameters: actions[0].parameters,
+      };
+    }
+
+    return {
+      intent: INTENTS.MULTI_ACTION,
+      confidence:
+        typeof confidence === "number"
+          ? Math.max(0, Math.min(1, confidence))
+          : 0,
+      parameters: { actions },
+    };
   }
 
   if (!VALID_INTENTS.has(intent)) {
@@ -221,6 +266,34 @@ export async function parseIntentFromContext(
   }
 }
 
+// A message that's clearly about a meeting ("create a google meeting
+// name is diet planning for @x tomorrow at 4pm") must never die as
+// UNKNOWN just because the model missed the phrasing - the meeting
+// pipeline extracts attendees/time/title deterministically anyway,
+// so classification is the ONLY thing the model was needed for here.
+const MEETING_KEYWORD_PATTERN =
+  /\b(google\s*meet(ing)?|meeting|gmeet|schedule\s+a\s+(meet|call|sync))\b/i;
+
+function deterministicFallback(userMessage, parsed) {
+  if (parsed.intent !== INTENTS.UNKNOWN) {
+    return parsed;
+  }
+
+  if (MEETING_KEYWORD_PATTERN.test(userMessage)) {
+    console.log(
+      "[intent-fallback] UNKNOWN remapped to SCHEDULE_MEETING"
+    );
+
+    return {
+      intent: INTENTS.SCHEDULE_MEETING,
+      confidence: 0.5,
+      parameters: {},
+    };
+  }
+
+  return parsed;
+}
+
 /**
  * Converts a natural language request
  * into a validated intent object.
@@ -241,5 +314,9 @@ export async function parseIntent(
       user
     );
 
-  return parseIntentFromContext(contextualMessage);
+  const parsed = await parseIntentFromContext(
+    contextualMessage
+  );
+
+  return deterministicFallback(userMessage, parsed);
 }

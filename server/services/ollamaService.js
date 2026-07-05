@@ -56,13 +56,14 @@ export async function chatWithOllama({
         options: {
           temperature: 0,
 
-          // Ollama's default context is 4096 tokens but the system
-          // prompt alone is ~6000, so with the default it was silently
-          // TRUNCATED - the model literally never saw a third of its
-          // instructions. 8192 fits prompt + per-request context +
-          // output with headroom, without the load-time/memory cost a
-          // 16k window showed on this machine.
-          num_ctx: 8192,
+          // Ollama's default context is 4096 tokens and silently
+          // truncates from the TOP of the prompt when exceeded - the
+          // model loses its earliest instructions/examples first. The
+          // system prompt has grown past 7000 tokens, so 8192 started
+          // clipping again (symptom: basic intents suddenly parsing as
+          // UNKNOWN). Keep real headroom, and re-check this whenever
+          // the prompt grows: prompt tokens ≈ SYSTEM_PROMPT.length/3.8.
+          num_ctx: 12288,
 
           // The reply is one small JSON object - never let a runaway
           // generation burn seconds producing garbage past it.

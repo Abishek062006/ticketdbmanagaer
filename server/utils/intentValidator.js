@@ -93,6 +93,8 @@ const requiredParameters = {
   [INTENTS.LIST_MY_MEETINGS]: [],
   [INTENTS.MY_INFO]: [],
 
+  [INTENTS.MULTI_ACTION]: ["actions"],
+
   [INTENTS.AGGREGATE_CREATE_TABLE]: [
     "tableName",
     "newTableName",

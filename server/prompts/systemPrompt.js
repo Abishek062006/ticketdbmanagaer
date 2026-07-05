@@ -898,13 +898,31 @@ Response:
   }
 }
 
-Note: any request to schedule/arrange/set up a meeting, google meet,
-call, or sync is SCHEDULE_MEETING. Put ONLY a short "title" (the
-topic, if the user stated one) in parameters - the application itself
-extracts the attendees (from the @mentions) and the date/time from
-the user's message, never you. Never put emails, names, dates, or
-times into the parameters, and never route meeting requests to
-CREATE_TICKET.
+----------------------------------------
+
+User:
+create a google meeting name is diet planning for @aparajitha @ravi tomorrow at 4pm
+
+Response:
+
+{
+  "intent":"SCHEDULE_MEETING",
+  "confidence":1,
+  "parameters":{
+    "title":"diet planning"
+  }
+}
+
+Note: any request to schedule/arrange/set up/create a meeting, google
+meet/meeting, call, or sync is SCHEDULE_MEETING - regardless of
+phrasing ("create a google meeting", "set up a call", "arrange a
+gmeet"). NEVER return UNKNOWN for a message containing "meeting" or
+"google meet", and never route it to CREATE_TABLE/CREATE_RECORD/
+CREATE_TICKET. Put ONLY a short "title" (the topic, if the user
+stated one - "name is X"/"about X"/"called X") in parameters - the
+application itself extracts the attendees (from the @mentions) and
+the date/time from the user's message, never you. Never put emails,
+names, dates, or times into the parameters.
 
 ----------------------------------------
 
@@ -982,6 +1000,59 @@ Response:
 Note: "who am I", "my profile", "my details", "what tables can I
 access", "who can I send tickets to", "my permissions" are all
 MY_INFO.
+
+----------------------------------------
+
+User:
+Remove tables iphone and departments
+
+Response:
+
+{
+  "intent":"MULTI_ACTION",
+  "confidence":1,
+  "parameters":{
+    "actions":[
+      {"intent":"DELETE_TABLE","parameters":{"tableName":"iphone"}},
+      {"intent":"DELETE_TABLE","parameters":{"tableName":"departments"}}
+    ]
+  }
+}
+
+----------------------------------------
+
+Current Table:
+employees
+
+Columns:
+- fullName (String)
+- salary (Number)
+
+User:
+Add an employee named Karan with salary 45000 and give Priya a salary of 60000
+
+Response:
+
+{
+  "intent":"MULTI_ACTION",
+  "confidence":1,
+  "parameters":{
+    "actions":[
+      {"intent":"CREATE_RECORD","parameters":{"tableName":"employees","record":{"fullName":"Karan","salary":45000}}},
+      {"intent":"UPDATE_RECORD","parameters":{"tableName":"employees","filters":{"fullName":"Priya"},"updates":{"salary":60000}}}
+    ]
+  }
+}
+
+Note: use MULTI_ACTION when - and ONLY when - one message asks for
+TWO OR MORE separate operations ("delete X and Y", "add A and update
+B", "rename T then add a column"). Each entry in "actions" uses the
+EXACT same {intent, parameters} shape that operation would have on
+its own - same intent names, same parameter names, nothing new.
+Never use MULTI_ACTION for a single operation, never nest a
+MULTI_ACTION inside another, and never put CREATE_TICKET,
+SCHEDULE_MEETING, or SHARE_MEETING_CODE inside one - those are
+always sent alone as their own single intent.
 
 ----------------------------------------
 

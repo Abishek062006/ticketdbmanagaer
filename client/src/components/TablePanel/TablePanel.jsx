@@ -12,43 +12,52 @@ function TicketPreviewPane({ ticket }) {
 
   return (
     <div className="ticket-preview-pane">
-      <h2>Ticket preview</h2>
+      <div className="ticket-form">
+        <div className="ticket-form-header">
+          <h2>New Ticket</h2>
+          <span className="ticket-form-badge">Preview</span>
+        </div>
 
-      <p>
-        To: <code>{ticket.assignedTo}</code>
-      </p>
+        <div className="ticket-form-body">
+          <div className="tf-row">
+            <span className="tf-label">Assigned to</span>
+            <div className="tf-value tf-mono">
+              {ticket.assignedTo}
+            </div>
+          </div>
 
-      {ticket.mentions?.length > 0 && (
-        <p>
-          cc:{" "}
-          {ticket.mentions
-            .map((name) => `@${name}`)
-            .join(", ")}
-        </p>
-      )}
+          {ticket.mentions?.length > 0 && (
+            <div className="tf-row">
+              <span className="tf-label">CC</span>
+              <div className="tf-value tf-mono">
+                {ticket.mentions.join(", ")}
+              </div>
+            </div>
+          )}
 
-      {fieldEntries.length > 0 ? (
-        <ul className="known-fields">
           {fieldEntries.map(([name, value]) => (
-            <li key={name}>
-              <strong>{name}:</strong> {String(value)}
-            </li>
+            <div className="tf-row" key={name}>
+              <span className="tf-label">{name}</span>
+              <div className="tf-value">{String(value)}</div>
+            </div>
           ))}
-        </ul>
-      ) : (
-        <p>(no additional fields)</p>
-      )}
 
-      {ticket.deadline && (
-        <p className="ticket-deadline">
-          Due{" "}
-          {new Date(ticket.deadline).toLocaleDateString(undefined, {
-            day: "numeric",
-            month: "short",
-            year: "numeric",
-          })}
-        </p>
-      )}
+          {ticket.deadline && (
+            <div className="tf-row">
+              <span className="tf-label">Due date</span>
+              <div className="tf-value tf-due">
+                {new Date(
+                  ticket.deadline
+                ).toLocaleDateString(undefined, {
+                  day: "numeric",
+                  month: "short",
+                  year: "numeric",
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
 
       <p className="ticket-preview-hint">
         Use Send / Cancel in the chat to finish.

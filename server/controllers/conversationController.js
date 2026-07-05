@@ -201,6 +201,76 @@ const dispatchAndRespond = async (
     });
   }
 
+  // Batches execute sequentially; one failing action doesn't abort
+  // the rest, and every line gets its own result in the summary.
+  if (parsedIntent.intent === INTENTS.MULTI_ACTION) {
+    const actions = parsedIntent.parameters.actions || [];
+    const lines = [];
+    let lastTable = null;
+
+    for (let index = 0; index < actions.length; index++) {
+      const sub = actions[index];
+
+      try {
+        let subResult = await dispatchIntent(sub);
+
+        // Same post-dispatch filtering LIST_TABLES gets on the
+        // single-intent path - an employee's batch must not leak
+        // tables they can't see.
+        if (
+          sub.intent === INTENTS.LIST_TABLES &&
+          user &&
+          user.role !== "admin"
+        ) {
+          const allowed = new Set(
+            (user.allowedTables || []).map((name) =>
+              name.toLowerCase()
+            )
+          );
+
+          subResult = (subResult || []).filter((table) =>
+            allowed.has(table.tableName.toLowerCase())
+          );
+        }
+
+        lines.push(
+          `${index + 1}. ${buildResultSummary(sub, subResult)}`
+        );
+
+        lastTable =
+          sub.parameters?.newName ||
+          sub.parameters?.tableName ||
+          sub.parameters?.newTableName ||
+          lastTable;
+      } catch (error) {
+        lines.push(`${index + 1}. Failed: ${error.message}`);
+      }
+    }
+
+    setLastIntent(sessionId, INTENTS.MULTI_ACTION);
+
+    if (lastTable) {
+      setCurrentTable(sessionId, lastTable);
+    }
+
+    clearPendingAction(sessionId);
+
+    const message = `Ran ${actions.length} action(s):\n${lines.join(
+      "\n"
+    )}`;
+
+    addMessage(sessionId, "assistant", message);
+
+    return respond(res, sessionId, {
+      type: "action_result",
+      intent: INTENTS.MULTI_ACTION,
+      confidence: 1,
+      affectedTable: lastTable,
+      message,
+      result: null,
+    });
+  }
+
   let result = await dispatchIntent(parsedIntent);
 
   // LIST_TABLES has no single tableName param to authorize against
@@ -262,6 +332,112 @@ const SELF_SERVICE_INTENTS = [
   INTENTS.LIST_MY_MEETINGS,
   INTENTS.MY_INFO,
 ];
+
+// Tickets and meetings are interactive flows (assignee resolution,
+// deadline questions, previews) that depend on the raw message - they
+// can't run as one line of a batch.
+const BATCH_EXCLUDED_INTENTS = [
+  INTENTS.CREATE_TICKET,
+  INTENTS.UPDATE_TICKET_STATUS,
+  INTENTS.ADD_TICKET_NOTE,
+  INTENTS.SCHEDULE_MEETING,
+  INTENTS.SHARE_MEETING_CODE,
+];
+
+// Why a batch line can't run: returns a human-readable reason, or
+// null when the sub-action is fully resolved and safe to execute.
+// Anything that would normally trigger a clarification/form gets
+// skipped with advice to run it alone - a batch never half-asks.
+const batchBlockerReason = async (sub, user) => {
+  const { intent, parameters = {} } = sub;
+
+  const authError = checkIntentAuthorization(
+    intent,
+    parameters,
+    user
+  );
+
+  if (authError) return authError;
+
+  if (parameters.unresolvedFields?.length > 0) {
+    return `no column matching ${parameters.unresolvedFields.join(", ")}`;
+  }
+
+  if (
+    intent === INTENTS.CREATE_TABLE &&
+    (!parameters.columns || parameters.columns.length === 0)
+  ) {
+    return "no columns specified - create this table in its own message";
+  }
+
+  if (intent === INTENTS.CREATE_RECORD && parameters.tableName) {
+    const table = await TableMetadata.findOne({
+      tableName: parameters.tableName.toLowerCase(),
+    });
+
+    if (table) {
+      const missing = computeMissingFields(
+        table,
+        parameters.record || {}
+      );
+
+      if (missing.length > 0) {
+        return `missing values for ${missing
+          .map((field) => field.name)
+          .join(", ")} - add this row in its own message to get the form`;
+      }
+    }
+  }
+
+  if (
+    SINGULAR_RECORD_INTENTS.includes(intent) &&
+    !parameters.recordId
+  ) {
+    if (
+      !parameters.filters ||
+      Object.keys(parameters.filters).length === 0
+    ) {
+      return "couldn't tell which row this applies to";
+    }
+
+    if (
+      typeof parameters.matchCount === "number" &&
+      parameters.matchCount !== 1
+    ) {
+      return parameters.matchCount === 0
+        ? "no row matches"
+        : `matches ${parameters.matchCount} rows - narrow it in its own message`;
+    }
+  }
+
+  if (
+    intent === INTENTS.JOIN_QUERY ||
+    intent === INTENTS.JOIN_CREATE_TABLE
+  ) {
+    const joinResolution = await resolveJoinColumns(parameters);
+
+    if (!joinResolution.resolved) {
+      return "couldn't determine the join columns";
+    }
+
+    parameters.on = joinResolution.on;
+  }
+
+  const validation = validateIntent(sub);
+
+  if (!validation.valid) return validation.message;
+
+  return null;
+};
+
+const describeBatchAction = (sub) => {
+  const table =
+    sub.parameters?.tableName ||
+    sub.parameters?.baseTable ||
+    sub.parameters?.oldName;
+
+  return `${sub.intent}${table ? ` on \`${table}\`` : ""}`;
+};
 
 // "tickets" and "meetings" aren't database tables - when the model
 // routes "show my tickets" to LIST_RECORDS anyway, remap it to the
@@ -343,6 +519,135 @@ const routeResolvedIntent = async (
     return respond(res, sessionId, {
       type: "error",
       message: "I couldn't understand that request.",
+    });
+  }
+
+  // A batch: enrich and gate every sub-action individually, then run
+  // the runnable ones behind ONE combined confirmation. Sub-actions
+  // that would need a follow-up question are skipped with a reason -
+  // a batch executes cleanly or not at all, it never half-asks.
+  if (intent === INTENTS.MULTI_ACTION) {
+    const rawActions = parameters.actions || [];
+    const valid = [];
+    const skipped = [];
+
+    for (const rawAction of rawActions) {
+      let sub = {
+        intent: rawAction.intent,
+        confidence: 1,
+        parameters: rawAction.parameters || {},
+      };
+
+      if (BATCH_EXCLUDED_INTENTS.includes(sub.intent)) {
+        skipped.push({
+          label: describeBatchAction(sub),
+          reason:
+            "tickets and meetings need their own message",
+        });
+        continue;
+      }
+
+      sub = await enrichIntent(sessionId, sub, user, "");
+
+      if (
+        Object.prototype.hasOwnProperty.call(
+          sub.parameters,
+          "sortBy"
+        ) &&
+        sub.parameters.sortBy === null
+      ) {
+        delete sub.parameters.sortBy;
+      }
+
+      if (SELF_SERVICE_INTENTS.includes(sub.intent)) {
+        sub.parameters.userEmail = user.email;
+        sub.parameters.userRole = user.role;
+
+        if (sub.intent === INTENTS.MY_INFO) {
+          sub.parameters.userAllowedTables = user.allowedTables;
+          sub.parameters.userAllowedAssignees =
+            user.allowedAssignees;
+        }
+      }
+
+      const reason = await batchBlockerReason(sub, user);
+
+      if (reason) {
+        skipped.push({
+          label: describeBatchAction(sub),
+          reason,
+        });
+        continue;
+      }
+
+      valid.push(sub);
+    }
+
+    if (valid.length === 0) {
+      clearPendingAction(sessionId);
+
+      const message = `I couldn't run any of those:\n${skipped
+        .map((s) => `- ${s.label}: ${s.reason}`)
+        .join("\n")}`;
+
+      addMessage(sessionId, "assistant", message);
+
+      return respond(res, sessionId, {
+        type: "error",
+        message,
+      });
+    }
+
+    const multiIntent = {
+      intent: INTENTS.MULTI_ACTION,
+      confidence: 1,
+      parameters: { actions: valid },
+    };
+
+    const hasWrite = valid.some((action) =>
+      WRITE_INTENTS.includes(action.intent)
+    );
+
+    if (!hasWrite) {
+      return dispatchAndRespond(
+        res,
+        sessionId,
+        multiIntent,
+        user
+      );
+    }
+
+    const lines = valid.map(
+      (action, index) =>
+        `${index + 1}. ${buildConfirmationSummary(action, {
+          matchCount: action.parameters.matchCount,
+        }).replace(/\s*Confirm\?$/, "")}`
+    );
+
+    let summary = `This will run ${valid.length} action(s):\n${lines.join(
+      "\n"
+    )}`;
+
+    if (skipped.length > 0) {
+      summary += `\nSkipped: ${skipped
+        .map((s) => `${s.label} (${s.reason})`)
+        .join("; ")}`;
+    }
+
+    summary += `\nConfirm?`;
+
+    setPendingAction(sessionId, {
+      type: "CONFIRMATION",
+      intent: INTENTS.MULTI_ACTION,
+      parameters: { actions: valid },
+      summary,
+    });
+
+    addMessage(sessionId, "assistant", summary);
+
+    return respond(res, sessionId, {
+      type: "confirmation_required",
+      summary,
     });
   }
 

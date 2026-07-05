@@ -6,7 +6,8 @@ import {
 import { getDynamicModel } from "../utils/dynamicModel.js";
 import { IDENTITY_TABLE_NAME } from "../utils/identityTable.js";
 
-const RAW_MENTION_PATTERN = /(^|\s)@([\w.\-]+)/g;
+// Tolerates an accidental space after the @ ("@ ABISHEK").
+const RAW_MENTION_PATTERN = /(^|\s)@ ?([\w.\-]+)/g;
 
 const escapeRegex = (value) =>
   value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -183,6 +184,16 @@ export const resolveMeetingCodeShare = async (
 
 export { extractMeetCode };
 
+// "name is diet planning", "about the roadmap", "called standup",
+// "titled X", "regarding Y" - capture up to the next structural word.
+const TITLE_PATTERN =
+  /\b(?:named?(?:\s+is)?|about|called|titled|regarding)\s+([\w][\w ,'&-]{1,60}?)(?=\s+(?:for|with|to|at|on|tomorrow|today|next|in|@)\b|\s*$)/i;
+
+export const extractMeetingTitle = (text = "") => {
+  const match = TITLE_PATTERN.exec(text);
+  return match ? match[1].trim() : null;
+};
+
 /**
  * SCHEDULE_MEETING: attendees come from the literal @mentions in the
  * message (verified against the employees table), and the date+time
@@ -233,8 +244,15 @@ export const resolveMeeting = async (
     delete parameters.scheduledFor;
   }
 
-  if (typeof parameters.title !== "string" || !parameters.title.trim()) {
-    parameters.title = "Meeting";
+  // Prefer the model's title; recover one from the raw text when the
+  // model didn't provide it ("name is diet planning" phrasing).
+  if (
+    typeof parameters.title !== "string" ||
+    !parameters.title.trim() ||
+    parameters.title.trim().toLowerCase() === "meeting"
+  ) {
+    parameters.title =
+      extractMeetingTitle(rawMessage) || "Meeting";
   }
 
   return { ...parsedIntent, parameters };
