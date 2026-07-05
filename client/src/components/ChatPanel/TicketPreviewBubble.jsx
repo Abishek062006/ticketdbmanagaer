@@ -30,6 +30,17 @@ export default function TicketPreviewBubble({
         <p className="known-fields">(no additional fields)</p>
       )}
 
+      {message.deadline && (
+        <p className="ticket-deadline">
+          Due{" "}
+          {new Date(message.deadline).toLocaleDateString(undefined, {
+            day: "numeric",
+            month: "short",
+            year: "numeric",
+          })}
+        </p>
+      )}
+
       {!message.resolved ? (
         <div className="confirmation-actions">
           <button

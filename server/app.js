@@ -10,6 +10,7 @@ import recordRoutes from "./routes/recordRoutes.js";
 import conversationRoutes from "./routes/conversationRoutes.js";
 import authRoutes from "./routes/authRoutes.js";
 import ticketRoutes from "./routes/ticketRoutes.js";
+import meetingRoutes from "./routes/meetingRoutes.js";
 import employeeRoutes from "./routes/employeeRoutes.js";
 import { notFound } from "./middleware/notFound.js";
 import { errorHandler } from "./middleware/errorHandler.js";
@@ -51,6 +52,7 @@ app.use("/api/tables", recordRoutes);
 
 app.use("/api/chat", conversationRoutes);
 app.use("/api/tickets", ticketRoutes);
+app.use("/api/meetings", meetingRoutes);
 app.use("/api/employees", employeeRoutes);
 
 app.use(notFound);

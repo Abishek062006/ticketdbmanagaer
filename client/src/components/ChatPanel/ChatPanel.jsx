@@ -76,6 +76,7 @@ export default function ChatPanel() {
           assignedTo: data.assignedTo,
           mentions: data.mentions,
           fields: data.fields,
+          deadline: data.deadline,
           resolved: false,
         });
 
@@ -85,6 +86,7 @@ export default function ChatPanel() {
           assignedTo: data.assignedTo,
           mentions: data.mentions,
           fields: data.fields,
+          deadline: data.deadline,
         });
         break;
 
@@ -197,6 +199,16 @@ export default function ChatPanel() {
 
   return (
     <div className="chat-panel">
+      <div className="chat-panel-header">
+        <span className="assistant-dot" />
+        <div className="assistant-identity">
+          <span className="assistant-name">Data Assistant</span>
+          <span className="assistant-status">
+            {busy ? "Working..." : "Online"}
+          </span>
+        </div>
+      </div>
+
       <div className="chat-messages" ref={scrollRef}>
         {messages.map((message) => (
           <MessageBubble

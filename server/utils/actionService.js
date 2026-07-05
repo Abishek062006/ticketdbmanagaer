@@ -41,7 +41,14 @@ import {
   createTicket,
   updateTicketStatus,
   addTicketNote,
+  listMyTickets,
 } from "../services/ticketService.js";
+
+import {
+  createMeeting,
+  setMeetingCode,
+  listMeetingsForUser,
+} from "../services/meetingService.js";
 
 export const tableActions = {
   create: async (
@@ -248,5 +255,25 @@ export const ticketActions = {
 
   addNote: async (ticketId, note, actorEmail) => {
     return await addTicketNote(ticketId, note, actorEmail);
+  },
+};
+
+export const meetingActions = {
+  create: async (parameters) => {
+    return await createMeeting(parameters);
+  },
+
+  shareCode: async (meetingId, code, actorEmail) => {
+    return await setMeetingCode(meetingId, code, actorEmail);
+  },
+
+  listForUser: async (email) => {
+    return await listMeetingsForUser(email);
+  },
+};
+
+export const selfServiceActions = {
+  listMyTickets: async (email, scope) => {
+    return await listMyTickets(email, scope);
   },
 };

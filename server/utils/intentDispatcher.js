@@ -5,6 +5,8 @@ import {
   queryActions,
   permissionActions,
   ticketActions,
+  meetingActions,
+  selfServiceActions,
 } from "./actionService.js";
 
 export const dispatchIntent = async (
@@ -192,6 +194,46 @@ export const dispatchIntent = async (
         parameters.note,
         parameters.actorEmail
       );
+
+    case INTENTS.SCHEDULE_MEETING:
+      return await meetingActions.create({
+        organizer: parameters.organizer,
+        attendees: parameters.attendees || [],
+        scheduledFor: parameters.scheduledFor,
+        title: parameters.title,
+      });
+
+    case INTENTS.SHARE_MEETING_CODE:
+      return await meetingActions.shareCode(
+        parameters.meetingId,
+        parameters.code,
+        parameters.actorEmail
+      );
+
+    // ==========================
+    // SELF-SERVICE (the caller's own tickets/meetings/profile;
+    // userEmail/userRole are stamped by the controller, never
+    // taken from the model)
+    // ==========================
+
+    case INTENTS.LIST_MY_TICKETS:
+      return await selfServiceActions.listMyTickets(
+        parameters.userEmail,
+        parameters.scope
+      );
+
+    case INTENTS.LIST_MY_MEETINGS:
+      return await meetingActions.listForUser(
+        parameters.userEmail
+      );
+
+    case INTENTS.MY_INFO:
+      return {
+        email: parameters.userEmail,
+        role: parameters.userRole,
+        allowedTables: parameters.userAllowedTables,
+        allowedAssignees: parameters.userAllowedAssignees,
+      };
 
     case INTENTS.AGGREGATE_CREATE_TABLE:
       return await queryActions.aggregateCreateTable(parameters);

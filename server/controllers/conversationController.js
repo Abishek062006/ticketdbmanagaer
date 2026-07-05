@@ -32,6 +32,14 @@ import {
 } from "../utils/recordMatcher.js";
 import { resolveJoinColumns } from "../services/joinResolver.js";
 import { resolveTicketAssignee } from "../services/ticketAssigneeResolver.js";
+import {
+  resolveAttendeeList,
+  extractMeetCode,
+} from "../services/meetingResolver.js";
+import {
+  parseDeadline,
+  parseNaturalDateTime,
+} from "../utils/dateParser.js";
 import { checkIntentAuthorization } from "../services/authorizationService.js";
 import { resolveTicketForUser } from "../services/ticketService.js";
 
@@ -145,6 +153,7 @@ const askTicketPreview = (
     assignedTo,
     mentions,
     fields,
+    deadline: parsedIntent.parameters.deadline || null,
   });
 };
 
@@ -248,6 +257,59 @@ const dispatchAndRespond = async (
  * clarification / form / confirmation gates, or dispatches
  * it immediately when it's a read intent.
  */
+const SELF_SERVICE_INTENTS = [
+  INTENTS.LIST_MY_TICKETS,
+  INTENTS.LIST_MY_MEETINGS,
+  INTENTS.MY_INFO,
+];
+
+// "tickets" and "meetings" aren't database tables - when the model
+// routes "show my tickets" to LIST_RECORDS anyway, remap it to the
+// self-service intent instead of letting the table-access check
+// reject it. Only when no REAL user table shadows the name.
+const VIRTUAL_TABLE_INTENTS = {
+  ticket: INTENTS.LIST_MY_TICKETS,
+  tickets: INTENTS.LIST_MY_TICKETS,
+  meeting: INTENTS.LIST_MY_MEETINGS,
+  meetings: INTENTS.LIST_MY_MEETINGS,
+};
+
+const remapVirtualTables = async (parsedIntent) => {
+  const { intent, parameters = {} } = parsedIntent;
+
+  if (
+    intent !== INTENTS.LIST_RECORDS &&
+    intent !== INTENTS.GET_RECORD
+  ) {
+    return parsedIntent;
+  }
+
+  const normalized = (parameters.tableName || "")
+    .toLowerCase()
+    .replace(/^my\s+/, "")
+    .trim();
+
+  const mappedIntent = VIRTUAL_TABLE_INTENTS[normalized];
+
+  if (!mappedIntent) {
+    return parsedIntent;
+  }
+
+  const realTable = await TableMetadata.findOne({
+    tableName: normalized,
+  });
+
+  if (realTable) {
+    return parsedIntent;
+  }
+
+  return {
+    ...parsedIntent,
+    intent: mappedIntent,
+    parameters: {},
+  };
+};
+
 const routeResolvedIntent = async (
   res,
   sessionId,
@@ -255,7 +317,25 @@ const routeResolvedIntent = async (
   attempts = 0,
   user
 ) => {
+  parsedIntent = await remapVirtualTables(parsedIntent);
+
   const { intent, parameters = {} } = parsedIntent;
+
+  // Self-service intents always answer about the CALLER - identity
+  // comes from the authenticated request, never from the model.
+  if (SELF_SERVICE_INTENTS.includes(intent)) {
+    parameters.userEmail = user.email;
+    parameters.userRole = user.role;
+
+    if (parameters.scope === "all" && user.role !== "admin") {
+      delete parameters.scope;
+    }
+
+    if (intent === INTENTS.MY_INFO) {
+      parameters.userAllowedTables = user.allowedTables;
+      parameters.userAllowedAssignees = user.allowedAssignees;
+    }
+  }
 
   if (intent === INTENTS.UNKNOWN) {
     clearPendingAction(sessionId);
@@ -304,6 +384,82 @@ const routeResolvedIntent = async (
         intent,
         parameters: cleanParameters,
         question: `\`${assigneeNoEmail}\` doesn't have an email on file, so I can't send them a ticket. Who should this go to instead?`,
+      });
+    }
+
+    // Deadline is compulsory - a ticket without one never lands on
+    // anyone's calendar, so ask rather than defaulting silently.
+    if (!parameters.deadline) {
+      return askClarification(res, sessionId, {
+        subtype: "TICKET_DEADLINE",
+        intent,
+        parameters,
+        question:
+          'When is this ticket due? (e.g. "May 20", "tomorrow", or "in 5 days")',
+      });
+    }
+  }
+
+  // SCHEDULE_MEETING: attendees and a concrete date+time are resolved
+  // from the literal message (see meetingResolver); anything missing
+  // gets asked for before the confirmation step.
+  if (intent === INTENTS.SCHEDULE_MEETING) {
+    parameters.organizer = user.email;
+
+    if (parameters.attendeesUnresolved?.length > 0) {
+      const { attendeesUnresolved, ...cleanParameters } = parameters;
+
+      return askClarification(res, sessionId, {
+        subtype: "MEETING_ATTENDEES",
+        intent,
+        parameters: cleanParameters,
+        question: `I couldn't match ${attendeesUnresolved
+          .map((name) => `\`${name}\``)
+          .join(", ")} to any employee. Who should be invited? (@name or email)`,
+      });
+    }
+
+    if (!parameters.attendees || parameters.attendees.length === 0) {
+      return askClarification(res, sessionId, {
+        subtype: "MEETING_ATTENDEES",
+        intent,
+        parameters,
+        question:
+          "Who should be invited to this meeting? (@name or email, e.g. \"@ravi and @sana\")",
+      });
+    }
+
+    if (!parameters.scheduledFor) {
+      return askClarification(res, sessionId, {
+        subtype: "MEETING_TIME",
+        intent,
+        parameters,
+        question:
+          'When should the meeting be? Give a date and time (e.g. "tomorrow at 3pm" or "May 20 at 15:00").',
+      });
+    }
+  }
+
+  // SHARE_MEETING_CODE: the meeting and code were resolved from the
+  // literal message (meetingResolver); ask for whichever is missing.
+  if (intent === INTENTS.SHARE_MEETING_CODE) {
+    if (parameters.meetingNotFound) {
+      clearPendingAction(sessionId);
+
+      return respond(res, sessionId, {
+        type: "error",
+        message: parameters.meetingQuery
+          ? `I couldn't find a meeting of yours named anything like \`${parameters.meetingQuery}\`.`
+          : "You haven't organized any meetings yet, so there's nothing to share a code for.",
+      });
+    }
+
+    if (!parameters.code) {
+      return askClarification(res, sessionId, {
+        subtype: "MEETING_CODE",
+        intent,
+        parameters,
+        question: `What's the Meet code for "${parameters.meetingTitle}"? (e.g. \`abc-defg-hij\` or the full meet.google.com link)`,
       });
     }
   }
@@ -730,6 +886,146 @@ export const chatController = async (
           nextAttempts,
           user
         );
+      }
+
+      // Deadline answers ("may 20", "in 5 days") parse in code - the
+      // date parser is the single source of truth for dates.
+      if (pendingAction.subtype === "TICKET_DEADLINE") {
+        const deadline = parseDeadline(message);
+
+        if (deadline) {
+          clearPendingAction(sessionId);
+
+          return routeResolvedIntent(
+            res,
+            sessionId,
+            {
+              intent: pendingAction.intent,
+              confidence: 1,
+              parameters: {
+                ...pendingAction.parameters,
+                deadline: deadline.toISOString(),
+              },
+            },
+            nextAttempts,
+            user
+          );
+        }
+
+        return askClarification(res, sessionId, {
+          subtype: "TICKET_DEADLINE",
+          intent: pendingAction.intent,
+          parameters: pendingAction.parameters,
+          question:
+            'I couldn\'t read that as a date. Try "May 20", "tomorrow", or "in 5 days".',
+          attempts: nextAttempts,
+        });
+      }
+
+      // Attendee answers resolve against the employees table in code.
+      if (pendingAction.subtype === "MEETING_ATTENDEES") {
+        const attendees = await resolveAttendeeList(message);
+
+        if (attendees.length > 0) {
+          clearPendingAction(sessionId);
+
+          const merged = [
+            ...new Set([
+              ...(pendingAction.parameters.attendees || []),
+              ...attendees,
+            ]),
+          ];
+
+          return routeResolvedIntent(
+            res,
+            sessionId,
+            {
+              intent: pendingAction.intent,
+              confidence: 1,
+              parameters: {
+                ...pendingAction.parameters,
+                attendees: merged,
+              },
+            },
+            nextAttempts,
+            user
+          );
+        }
+
+        return askClarification(res, sessionId, {
+          subtype: "MEETING_ATTENDEES",
+          intent: pendingAction.intent,
+          parameters: pendingAction.parameters,
+          question:
+            "I couldn't match anyone there to an employee. Give a name or email from the employees table.",
+          attempts: nextAttempts,
+        });
+      }
+
+      // Meet-code answers parse in code too.
+      if (pendingAction.subtype === "MEETING_CODE") {
+        const code = extractMeetCode(message);
+
+        if (code) {
+          clearPendingAction(sessionId);
+
+          return routeResolvedIntent(
+            res,
+            sessionId,
+            {
+              intent: pendingAction.intent,
+              confidence: 1,
+              parameters: {
+                ...pendingAction.parameters,
+                code,
+              },
+            },
+            nextAttempts,
+            user
+          );
+        }
+
+        return askClarification(res, sessionId, {
+          subtype: "MEETING_CODE",
+          intent: pendingAction.intent,
+          parameters: pendingAction.parameters,
+          question:
+            "That doesn't look like a Meet code. Paste the code (e.g. `abc-defg-hij`) or the full meet.google.com link.",
+          attempts: nextAttempts,
+        });
+      }
+
+      // Meeting time answers parse in code too.
+      if (pendingAction.subtype === "MEETING_TIME") {
+        const scheduledFor = parseNaturalDateTime(message);
+
+        if (scheduledFor) {
+          clearPendingAction(sessionId);
+
+          return routeResolvedIntent(
+            res,
+            sessionId,
+            {
+              intent: pendingAction.intent,
+              confidence: 1,
+              parameters: {
+                ...pendingAction.parameters,
+                scheduledFor: scheduledFor.toISOString(),
+              },
+            },
+            nextAttempts,
+            user
+          );
+        }
+
+        return askClarification(res, sessionId, {
+          subtype: "MEETING_TIME",
+          intent: pendingAction.intent,
+          parameters: pendingAction.parameters,
+          question:
+            'I need both a date and a time - e.g. "tomorrow at 3pm" or "May 20 at 15:00".',
+          attempts: nextAttempts,
+        });
       }
 
       // "Which row?" answers are matched directly against the table's

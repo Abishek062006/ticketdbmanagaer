@@ -149,6 +149,30 @@ export const buildConfirmationSummary = (
       }. Confirm?`;
     }
 
+    case INTENTS.SCHEDULE_MEETING: {
+      const when = parameters.scheduledFor
+        ? new Date(parameters.scheduledFor).toLocaleString(undefined, {
+            dateStyle: "medium",
+            timeStyle: "short",
+          })
+        : "an unspecified time";
+
+      return `This will schedule "${
+        parameters.title || "Meeting"
+      }" on ${when} and invite ${(parameters.attendees || []).join(
+        ", "
+      )}. Confirm?`;
+    }
+
+    case INTENTS.SHARE_MEETING_CODE:
+      return `This will share https://meet.google.com/${
+        parameters.code
+      } for "${parameters.meetingTitle}" with ${(
+        parameters.attendees || []
+      ).join(
+        ", "
+      )} - their meeting cards will show the link and a Join button. Confirm?`;
+
     case INTENTS.JOIN_CREATE_TABLE:
       return `This will create a new table \`${
         parameters.newTableName

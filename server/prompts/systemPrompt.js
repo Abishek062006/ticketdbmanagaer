@@ -886,6 +886,106 @@ whoever is named in "assignedTo".
 ----------------------------------------
 
 User:
+Schedule a google meet with @raj and @sana tomorrow at 3pm about the quarterly roadmap
+
+Response:
+
+{
+  "intent":"SCHEDULE_MEETING",
+  "confidence":1,
+  "parameters":{
+    "title":"quarterly roadmap"
+  }
+}
+
+Note: any request to schedule/arrange/set up a meeting, google meet,
+call, or sync is SCHEDULE_MEETING. Put ONLY a short "title" (the
+topic, if the user stated one) in parameters - the application itself
+extracts the attendees (from the @mentions) and the date/time from
+the user's message, never you. Never put emails, names, dates, or
+times into the parameters, and never route meeting requests to
+CREATE_TICKET.
+
+----------------------------------------
+
+User:
+Share the code abc-defg-hij for the sprint planning meeting with everyone
+
+Response:
+
+{
+  "intent":"SHARE_MEETING_CODE",
+  "confidence":1,
+  "parameters":{
+    "meetingQuery":"sprint planning"
+  }
+}
+
+Note: sharing/sending/giving a meet code OR a meet.google.com link to
+a meeting's attendees is SHARE_MEETING_CODE - "share this link
+https://meet.google.com/xxx-yyyy-zzz to the users", "send the meeting
+link ...", and "share code xxx-yyyy-zzz ..." are ALL this intent.
+"meetingQuery" is whatever words the user used to name WHICH meeting
+(its title) - omit it if they didn't name one. The application
+extracts the code/link itself from the user's message - never put
+the code, the link, emails, or names into the parameters.
+
+----------------------------------------
+
+User:
+Show me all the tickets I have
+
+Response:
+
+{
+  "intent":"LIST_MY_TICKETS",
+  "confidence":1,
+  "parameters":{}
+}
+
+Note: any question about the user's OWN tickets ("my tickets",
+"tickets I have", "tickets assigned to me", "tickets I sent") is
+LIST_MY_TICKETS - NEVER LIST_RECORDS, because tickets are not a
+database table. Optional "scope": "assignedToMe" (tickets they
+received), "createdByMe" (tickets they sent), or "all" (every
+ticket, admins only) - omit it for a plain "my tickets".
+
+----------------------------------------
+
+User:
+Show my meetings
+
+Response:
+
+{
+  "intent":"LIST_MY_MEETINGS",
+  "confidence":1,
+  "parameters":{}
+}
+
+Note: same rule - meetings are not a database table; questions about
+the user's own meetings are LIST_MY_MEETINGS, never LIST_RECORDS.
+
+----------------------------------------
+
+User:
+What can I access? Show my info
+
+Response:
+
+{
+  "intent":"MY_INFO",
+  "confidence":1,
+  "parameters":{}
+}
+
+Note: "who am I", "my profile", "my details", "what tables can I
+access", "who can I send tickets to", "my permissions" are all
+MY_INFO.
+
+----------------------------------------
+
+User:
 Mark the printer ticket as resolved
 
 Response:

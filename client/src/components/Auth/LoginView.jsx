@@ -26,8 +26,25 @@ export default function LoginView() {
 
   return (
     <div className="login-view">
+      <div className="login-hero">
+        <div className="app-brand login-brand">
+          <span className="brand-mark">W</span>
+          <span className="brand-name">Workspace</span>
+        </div>
+
+        <h2 className="login-tagline">
+          Your data, one conversation away.
+        </h2>
+
+        <p className="login-subtag">
+          Query, manage, and share your team&apos;s data in plain
+          language - tables, tickets, meetings, and calendars in
+          one place.
+        </p>
+      </div>
+
       <form className="login-form" onSubmit={handleSubmit}>
-        <h1>Conversational Database Manager</h1>
+        <h1>Sign in</h1>
 
         <label className="form-field">
           <span>Email</span>

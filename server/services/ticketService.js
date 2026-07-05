@@ -13,6 +13,7 @@ export const createTicket = async ({
   assignedTo,
   mentions = [],
   fields = {},
+  deadline = null,
 }) => {
   if (!assignedTo) {
     throw new ApiError(400, "A ticket needs an assignee.");
@@ -23,6 +24,7 @@ export const createTicket = async ({
     assignedTo,
     mentions,
     fields: fields || {},
+    deadline: deadline ? new Date(deadline) : null,
   });
 };
 
@@ -36,6 +38,22 @@ export const listTicketsForUser = async (email, { scope = "assignedToMe" } = {})
   }
 
   return await Ticket.find({ assignedTo: email }).sort({ createdAt: -1 });
+};
+
+// Chat's "tickets I have": with no narrower scope, everything the
+// user touches - sent or received - in one list.
+export const listMyTickets = async (email, scope) => {
+  if (
+    scope === "all" ||
+    scope === "createdByMe" ||
+    scope === "assignedToMe"
+  ) {
+    return await listTicketsForUser(email, { scope });
+  }
+
+  return await Ticket.find({
+    $or: [{ assignedTo: email }, { createdBy: email }],
+  }).sort({ createdAt: -1 });
 };
 
 // Best-effort resolution for "mark the printer ticket as resolved"-style

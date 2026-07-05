@@ -26,6 +26,10 @@ const ticketSchema = new mongoose.Schema(
     // No standard/default fields are ever added beyond what was said.
     fields: { type: mongoose.Schema.Types.Mixed, default: {} },
 
+    // Compulsory for new tickets (the chat flow refuses to send one
+    // without it); null only on tickets created before this existed.
+    deadline: { type: Date, default: null },
+
     notes: { type: [noteSchema], default: [] },
   },
   { timestamps: true }

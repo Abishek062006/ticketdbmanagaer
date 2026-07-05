@@ -160,6 +160,127 @@ export const buildResultSummary = (
     case INTENTS.ADD_TICKET_NOTE:
       return `Added a note to the ticket.`;
 
+    case INTENTS.SCHEDULE_MEETING: {
+      const when = result?.scheduledFor
+        ? new Date(result.scheduledFor).toLocaleString(undefined, {
+            dateStyle: "medium",
+            timeStyle: "short",
+          })
+        : "";
+
+      return `Scheduled "${result?.title || "Meeting"}"${
+        when ? ` for ${when}` : ""
+      } with ${(result?.attendees || []).join(
+        ", "
+      )}. It's on everyone's calendar and Meetings tab. When you start the meet, tell me to share its code (e.g. "share code abc-defg-hij for ${
+        result?.title || "the meeting"
+      }") so attendees can join.`;
+    }
+
+    case INTENTS.SHARE_MEETING_CODE:
+      return `Shared https://meet.google.com/${result?.meetCode} for "${result?.title}" - attendees can now join from their Meetings tab.`;
+
+    case INTENTS.LIST_MY_TICKETS: {
+      const tickets = result || [];
+
+      if (tickets.length === 0) {
+        return "You have no tickets.";
+      }
+
+      const me = parameters.userEmail;
+
+      const lines = tickets.slice(0, 10).map((ticket, index) => {
+        const from =
+          ticket.createdBy === me ? "you" : ticket.createdBy;
+        const to =
+          ticket.assignedTo === me ? "you" : ticket.assignedTo;
+
+        const firstField = Object.entries(ticket.fields || {})[0];
+        const detail = firstField
+          ? ` - ${firstField[0]}: ${firstField[1]}`
+          : "";
+
+        const due = ticket.deadline
+          ? ` (due ${new Date(ticket.deadline).toLocaleDateString(
+              undefined,
+              { day: "numeric", month: "short", year: "numeric" }
+            )})`
+          : "";
+
+        return `${index + 1}. [${ticket.status}] ${from} → ${to}${detail}${due}`;
+      });
+
+      const more =
+        tickets.length > 10
+          ? `\n...and ${tickets.length - 10} more in the Tickets tab.`
+          : "";
+
+      return `You have ${tickets.length} ticket(s):\n${lines.join(
+        "\n"
+      )}${more}`;
+    }
+
+    case INTENTS.LIST_MY_MEETINGS: {
+      const meetings = result || [];
+
+      if (meetings.length === 0) {
+        return "You have no meetings scheduled.";
+      }
+
+      const me = parameters.userEmail;
+
+      const lines = meetings.slice(0, 10).map((meeting, index) => {
+        const when = new Date(
+          meeting.scheduledFor
+        ).toLocaleString(undefined, {
+          weekday: "short",
+          day: "numeric",
+          month: "short",
+          hour: "numeric",
+          minute: "2-digit",
+        });
+
+        const organizer =
+          meeting.organizer === me ? "you" : meeting.organizer;
+
+        const join = meeting.meetCode
+          ? ` - join: meet.google.com/${meeting.meetCode}`
+          : " - no join code shared yet";
+
+        return `${index + 1}. "${meeting.title}" - ${when} - organized by ${organizer}${join}`;
+      });
+
+      const more =
+        meetings.length > 10
+          ? `\n...and ${meetings.length - 10} more in the Meetings tab.`
+          : "";
+
+      return `You have ${meetings.length} meeting(s):\n${lines.join(
+        "\n"
+      )}${more}`;
+    }
+
+    case INTENTS.MY_INFO: {
+      const tables =
+        result?.allowedTables === null
+          ? "all tables (admin)"
+          : (result?.allowedTables || []).join(", ") || "none yet";
+
+      const assignees =
+        result?.allowedAssignees === null
+          ? "anyone (admin)"
+          : (result?.allowedAssignees || []).join(", ") ||
+            "no one yet";
+
+      return [
+        `Here's your profile:`,
+        `- Email: ${result?.email}`,
+        `- Role: ${result?.role}`,
+        `- Tables you can access: ${tables}`,
+        `- You can send tickets to: ${assignees}`,
+      ].join("\n");
+    }
+
     default:
       return `Done.`;
   }

@@ -77,9 +77,21 @@ const requiredParameters = {
   [INTENTS.GRANT_TICKET_PERMISSION]: ["employeeEmail", "assigneeEmail"],
   [INTENTS.REVOKE_TICKET_PERMISSION]: ["employeeEmail", "assigneeEmail"],
 
-  [INTENTS.CREATE_TICKET]: ["assignedTo"],
+  [INTENTS.CREATE_TICKET]: ["assignedTo", "deadline"],
   [INTENTS.UPDATE_TICKET_STATUS]: ["status"],
   [INTENTS.ADD_TICKET_NOTE]: ["note"],
+
+  [INTENTS.SCHEDULE_MEETING]: [
+    "organizer",
+    "attendees",
+    "scheduledFor",
+  ],
+
+  [INTENTS.SHARE_MEETING_CODE]: ["meetingId", "code"],
+
+  [INTENTS.LIST_MY_TICKETS]: [],
+  [INTENTS.LIST_MY_MEETINGS]: [],
+  [INTENTS.MY_INFO]: [],
 
   [INTENTS.AGGREGATE_CREATE_TABLE]: [
     "tableName",

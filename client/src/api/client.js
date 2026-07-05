@@ -66,6 +66,8 @@ export const updateTicketStatus = (ticketId, status) =>
     body: JSON.stringify({ status }),
   });
 
+export const listMeetings = () => request("/meetings");
+
 export const listRecords = (tableName, params = {}) => {
   const query = new URLSearchParams(params).toString();
 

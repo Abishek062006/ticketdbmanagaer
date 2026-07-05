@@ -39,6 +39,17 @@ function TicketPreviewPane({ ticket }) {
         <p>(no additional fields)</p>
       )}
 
+      {ticket.deadline && (
+        <p className="ticket-deadline">
+          Due{" "}
+          {new Date(ticket.deadline).toLocaleDateString(undefined, {
+            day: "numeric",
+            month: "short",
+            year: "numeric",
+          })}
+        </p>
+      )}
+
       <p className="ticket-preview-hint">
         Use Send / Cancel in the chat to finish.
       </p>
